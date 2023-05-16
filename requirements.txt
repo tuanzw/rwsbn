@@ -1,0 +1,6 @@
+Office365-REST-Python-Client
+python-dotenv
+pywin32
+pandas
+shortuuid
+openpyxl

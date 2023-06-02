@@ -24,6 +24,7 @@ class MailDispatcher:
         attachment_folder,
         s_split,
         cc_list,
+        forbidden_char,
     ):
         self._company_name = company_name
         self._trucking_vendor = trucking_vendor
@@ -37,6 +38,7 @@ class MailDispatcher:
         self._attachment_folder = attachment_folder
         self._s_split = s_split
         self._cc_list = cc_list
+        self._forbidden_char = forbidden_char
 
     def proceed_mail(self):
         outlook = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
@@ -79,18 +81,31 @@ class MailDispatcher:
         to_move_messages = []
         for message in messages:
             # if not a email or subject pattern is not valid, skip
-            if message.Class != 43 or re.search(self._pattern, message.Subject) is None:
+            if message.Class != 43:
                 continue
-
+            if re.search(self._pattern, message.Subject) is None:
+                logger.info(f"__SKIP__Not well-formed Mail Subject__{message.Subject}")
+                continue
             # extract sender from eamil, if not in potentail_senders, skip
             subject_dict = self.extract_mail_subject(message.Subject)
             potential_senders = env.get(subject_dict.get(self._trucking_vendor).lower())
-            if self.get_sender_email_string(message) not in potential_senders:
+            if potential_senders is None:
+                logger.info(
+                    f"__SKIP__Senders not defined__{subject_dict.get(self._trucking_vendor)}__{message.Subject}"
+                )
+                continue
+            if self.get_sender_email_string(message) not in potential_senders.lower():
+                logger.info(
+                    f"__SKIP__{self.get_sender_email_string(message)} not in list__[{potential_senders}]__{message.Subject}"
+                )
                 continue
 
             # proceed to save .xlsx files in attachment of valid mail
             to_move_messages.append(message)
-            for attachment in message.Attachments:
+            attachments = message.Attachments
+            if len(attachments) == 0:
+                logger.info(f"__No attachment__{message.Subject}")
+            for attachment in attachments:
                 if attachment.FileName.split(".")[-1] == "xlsx":
                     file_path = PurePath(
                         self._attachment_folder,
@@ -103,6 +118,8 @@ class MailDispatcher:
 
     def extract_mail_subject(self, subject) -> dict:
         result = {}
+        # remove illegal filename character
+        subject = "".join(c for c in subject if c not in self._forbidden_char)
         l = subject.split("-")
         r, t, p, w, s, *_ = l
         result[self._company_name] = r.split("[")[-1].strip()
@@ -129,18 +146,20 @@ class MailDispatcher:
         return p_dict
 
     def get_sender_email_string(self, message):
+        sender_email: str = ""
         if message.SenderEmailType == self._email_type:
-            return message.Sender.GetExchangeUser().PrimarySmtpAddress
+            sender_email = message.Sender.GetExchangeUser().PrimarySmtpAddress
         else:
-            return message.SenderEmailAddress
+            sender_email = message.SenderEmailAddress
 
-    def send_booking_number_mail(self, file_name, body):
+        return sender_email.lower()
+
+    def send_booking_number_mail(self, body, subject, to_list, cc_list):
         # https://www.codeforests.com/2020/06/05/how-to-send-email-from-outlook/
         outlook = win32.Dispatch("outlook.application")
         mail = outlook.CreateItem(0)  # 0 means mail
-        subject_dict = self.extract_mail_subject(subject=file_name)
-        mail.To = env.get(subject_dict.get(self._trucking_vendor).lower())
-        mail.Subject = f"[BookingNumber]_{file_name}"
+        mail.To = to_list
+        mail.Subject = subject
         mail.Body = body
-        mail.CC = self._cc_list
+        mail.CC = cc_list
         mail.Send()

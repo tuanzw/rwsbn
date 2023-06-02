@@ -160,6 +160,9 @@ cython_debug/
 #.idea/
 
 # User defined ignore
+.vscode/
 Scripts/
 *.bak
 pyvenv.cfg
+*.log
+*.log*

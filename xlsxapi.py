@@ -60,7 +60,7 @@ class ExcelDispatcher:
         )
         existing_bn_dict = {}
         if os.path.isfile(archive_path):
-            wb = load_workbook(filename=archive_path)
+            wb = load_workbook(filename=archive_path, data_only=True)
             ws = wb[self._worksheet_name]
 
             for data in ws.iter_rows(
@@ -83,7 +83,7 @@ class ExcelDispatcher:
         return existing_bn_dict
 
     def fill_booking_number(self, file_path):
-        wb = load_workbook(filename=file_path)
+        wb = load_workbook(filename=file_path, data_only=True)
 
         ws = wb[self._worksheet_name]
         # print(ws.calculate_dimension())
@@ -110,7 +110,7 @@ class ExcelDispatcher:
         wb.save(filename=file_path)
 
     def get_bn_dict_from_file(self, file_path):
-        wb = load_workbook(filename=file_path, read_only=True)
+        wb = load_workbook(filename=file_path, read_only=True, data_only=True)
 
         ws = wb[self._worksheet_name]
         bn_dict = {}

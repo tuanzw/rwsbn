@@ -124,7 +124,7 @@ class MailDispatcher:
         r, t, p, w, s, *_ = l
         result[self._company_name] = r.split("[")[-1].strip()
         result[self._wdate] = w.strip()
-        result[self._site_id] = s.strip()
+        result[self._site_id] = s.split("]")[0].strip()
         result[self._project] = p.strip()
         result[self._trucking_vendor] = t.split("]")[0].strip()
         return result
@@ -160,6 +160,6 @@ class MailDispatcher:
         mail = outlook.CreateItem(0)  # 0 means mail
         mail.To = to_list
         mail.Subject = subject
-        mail.Body = body
+        mail.HTMLBody = body
         mail.CC = cc_list
         mail.Send()

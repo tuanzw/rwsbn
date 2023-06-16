@@ -3,3 +3,4 @@ python-dotenv
 pywin32
 shortuuid
 openpyxl
+Jinja2

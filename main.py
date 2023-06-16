@@ -8,6 +8,9 @@ from mailapi import MailDispatcher
 from xlsxapi import ExcelDispatcher
 from o365api import SharePoint
 from logapi import logger
+from jinja2 import Environment, FileSystemLoader
+
+from datetime import datetime, timedelta
 
 env = dotenv_values(".env")
 # sharepoint
@@ -21,6 +24,7 @@ doc_lib = env.get("doc_library")
 s_split = env.get("s_split")
 attachment_folder = env.get("attachment_folder")
 attachement_move_to_folder = env.get("attachement_move_to_folder")
+sp_download_folder = env.get("sp_download_folder")
 worksheet_name = env.get("worksheet_name")
 trip_col_idx = int(env.get("trip_col_idx"))
 tn_col_idx = int(env.get("tn_col_idx"))
@@ -38,6 +42,7 @@ email_type = env.get("email_type")
 email_folder = env.get("email_folder")
 email_move_to_folder = env.get("email_move_to_folder")
 cc_list = env.get("cc_list")
+valid_sites = env.get("valid_sites")
 
 default_recipient = env.get("default_recipient")
 forbidden_char = env.get("forbidden_char")
@@ -45,12 +50,22 @@ forbidden_char = env.get("forbidden_char")
 sharepoint_folder = env.get("sharepoint_folder")
 
 
+def get_datemonth_str() -> str:
+    p_date = datetime.now() + timedelta(days=1)
+    return p_date.strftime("%m%d")
+
+
 def build_mail_body(bn_dict: dict) -> str:
-    body = "Trip\tTruck Number \t Booking Number\n"
+    fileloader = FileSystemLoader("templates")
+    jinja_env = Environment(loader=fileloader)
+
+    bookings = []
     for key, value in bn_dict.items():
         trip, truck, *_ = key.split(s_split)
-        body = body + f"{trip}\t{truck}\t{value}\n"
-    return body
+        booking = (trip, truck, value)
+        bookings.append(booking)
+    htmlBody = jinja_env.get_template("mailbody.html").render(bookings=bookings)
+    return htmlBody
 
 
 # read files and return the content of files
@@ -67,7 +82,7 @@ def not_well_prepared():
         return True
 
 
-if __name__ == "__main__":
+def run_app():
     try:
         logger.info("START")
         if not_well_prepared():
@@ -99,6 +114,9 @@ if __name__ == "__main__":
             bn_col_idx,
             first_row_idx,
         )
+        # check and create daily basic folder if not existed
+        add_sp_folder(sp)
+
         mail_d.proceed_mail()
         excel_d.proceed_excel()
 
@@ -106,10 +124,13 @@ if __name__ == "__main__":
         file_paths = glob(f"{attachment_folder}[!~$]*.xlsx")
         for file_path in file_paths:
             file_name = os.path.basename(file_path)
-            sp.upload_file(file_name, sharepoint_folder, get_file_content(file_path))
+            subject_dict = mail_d.extract_mail_subject(subject=file_name)
+
+            pickup_site = subject_dict.get(site_id)
+            sp_dest_folder = f"{sharepoint_folder}/{get_datemonth_str()}/{pickup_site}"
+            sp.upload_file(file_name, sp_dest_folder, get_file_content(file_path))
             bn_dict = excel_d.get_bn_dict_from_file(file_path)
 
-            subject_dict = mail_d.extract_mail_subject(subject=file_name)
             to_list = env.get(subject_dict.get(trucking_vendor).lower())
             #
             if to_list is None:
@@ -122,6 +143,7 @@ if __name__ == "__main__":
                     f"__INVALID__Trip/TruckNumber in build_mail_body: {file_name}"
                 )
                 logger.debug(bn_dict)
+                logger.debug(v)
                 continue
 
             mail_d.send_booking_number_mail(body, subject, to_list, cc_list)
@@ -135,3 +157,71 @@ if __name__ == "__main__":
         logger.exception(e)
     finally:
         logger.info("END")
+
+
+def add_sp_folder(sp: SharePoint):
+    datemonth_str = get_datemonth_str()
+    current_day_folder = f"{sharepoint_folder}/{datemonth_str}"
+    if sp.folder_existed(current_day_folder) is False:
+        sp.add_folder(sharepoint_folder, datemonth_str)
+        logger.info(f"__ADD folder: {current_day_folder}")
+    for site in valid_sites.split(","):
+        if sp.folder_existed(f"{current_day_folder}/{site}") is False:
+            sp.add_folder(current_day_folder, site)
+            logger.info(f"__ADD folder: {current_day_folder}/{site}")
+
+
+# create directory if it doesn't exist
+def create_dir(path):
+    dir_path = PurePath(attachment_folder, sp_download_folder, path)
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+
+
+# get back a list of subfolders from specific folder
+def get_folders(sp: SharePoint, folder):
+    l = []
+    folder_obj = sp.get_folder_list(folder)
+    for subfolder_obj in folder_obj:
+        subfolder = "/".join([folder, subfolder_obj.name])
+        l.append(subfolder)
+    return l
+
+
+# save the file to locate or remote location
+def save_file(file_n, file_obj, subfolder):
+    last_in_folder_name = subfolder.split("/")[-1]
+    dir_path = PurePath(
+        attachment_folder,
+        sp_download_folder,
+        f"{get_datemonth_str()}/{last_in_folder_name}",
+    )
+    file_dir_path = PurePath(dir_path, file_n)
+    with open(file_dir_path, "wb") as f:
+        f.write(file_obj)
+
+
+def get_file(sp: SharePoint, file_n, folder):
+    file_obj = sp.download_file(file_n, folder)
+    save_file(file_n, file_obj, folder)
+
+
+def get_files(sp: SharePoint, folder):
+    files_list = sp._get_files_list(folder)
+    for file in files_list:
+        get_file(sp, file.name, folder)
+
+
+def download_files(sp: SharePoint, sp_folder: str):
+    folder_list = get_folders(sp, sp_folder)
+    for folder in folder_list:
+        for subfolder in get_folders(sp, folder):
+            folder_list.append(subfolder)
+    for folder in folder_list:
+        last_in_folder_name = folder.split("/")[-1]
+        create_dir(f"{get_datemonth_str()}/{last_in_folder_name}")
+        get_files(sp, folder)
+
+
+if __name__ == "__main__":
+    run_app()

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        table {
+            margin: 5px 0;
+            font: 0.9em, Calibri, sans-serif;
+            width: 25%;
+            text-align: center;
+        }
+        
+        table, th, td {
+            border: 1.5px solid;
+            border-color:darkgrey;
+            border-collapse: collapse;
+        }
+    </style>
+    <title>Document</title>
+</head>
+<body>
+    <div class="container">
+        <p>Booking number below:</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Trip</th>
+                    <th>Truck</th>
+                    <th>Booking</th>
+                    <th>QR Code</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for booking in bookings%}
+                    <tr>
+                        <td>{{booking[0]}}</td>
+                        <td>{{booking[1]}}</td>
+                        <td>{{booking[2]}}</td>
+                        <td><img src="https://chart.googleapis.com/chart?cht=qr&chs=80x80&chl={{booking[2]}}" alt=""></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+            
+        </table>
+    </div>
+</body>
+</html>

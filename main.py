@@ -43,6 +43,7 @@ email_folder = env.get("email_folder")
 email_move_to_folder = env.get("email_move_to_folder")
 cc_list = env.get("cc_list")
 valid_sites = env.get("valid_sites")
+date_fmts = env.get("date_fmts")
 
 default_recipient = env.get("default_recipient")
 forbidden_char = env.get("forbidden_char")
@@ -103,6 +104,7 @@ def run_app():
             s_split,
             cc_list,
             forbidden_char,
+            date_fmts,
         )
         excel_d = ExcelDispatcher(
             s_split,
@@ -114,8 +116,6 @@ def run_app():
             bn_col_idx,
             first_row_idx,
         )
-        # check and create daily basic folder if not existed
-        add_sp_folder(sp)
 
         mail_d.proceed_mail()
         excel_d.proceed_excel()
@@ -126,8 +126,12 @@ def run_app():
             file_name = os.path.basename(file_path)
             subject_dict = mail_d.extract_mail_subject(subject=file_name)
 
+            mmdd_str = subject_dict.get(wdate)[-4:]
+            # check and create sharepoint folder if not existed
+            add_sp_folder(sp, mmdd_str)
+
             pickup_site = subject_dict.get(site_id)
-            sp_dest_folder = f"{sharepoint_folder}/{get_datemonth_str()}/{pickup_site}"
+            sp_dest_folder = f"{sharepoint_folder}/{mmdd_str}/{pickup_site}"
             sp.upload_file(file_name, sp_dest_folder, get_file_content(file_path))
             bn_dict = excel_d.get_bn_dict_from_file(file_path)
 
@@ -159,16 +163,15 @@ def run_app():
         logger.info("END")
 
 
-def add_sp_folder(sp: SharePoint):
-    datemonth_str = get_datemonth_str()
-    current_day_folder = f"{sharepoint_folder}/{datemonth_str}"
-    if sp.folder_existed(current_day_folder) is False:
-        sp.add_folder(sharepoint_folder, datemonth_str)
-        logger.info(f"__ADD folder: {current_day_folder}")
+def add_sp_folder(sp: SharePoint, mmdd_str: str):
+    folder_n = f"{sharepoint_folder}/{mmdd_str}"
+    if sp.folder_existed(folder_n) is False:
+        sp.add_folder(sharepoint_folder, mmdd_str)
+        logger.info(f"__ADD folder: {folder_n}")
     for site in valid_sites.split(","):
-        if sp.folder_existed(f"{current_day_folder}/{site}") is False:
-            sp.add_folder(current_day_folder, site)
-            logger.info(f"__ADD folder: {current_day_folder}/{site}")
+        if sp.folder_existed(f"{folder_n}/{site}") is False:
+            sp.add_folder(folder_n, site)
+            logger.info(f"__ADD folder: {folder_n}/{site}")
 
 
 # create directory if it doesn't exist

@@ -5,6 +5,7 @@ from pathlib import PurePath
 import win32com.client as win32
 
 from logapi import logger
+from datetime import datetime
 
 env = dotenv_values(".env")
 
@@ -25,6 +26,7 @@ class MailDispatcher:
         s_split,
         cc_list,
         forbidden_char,
+        date_fmts,
     ):
         self._company_name = company_name
         self._trucking_vendor = trucking_vendor
@@ -39,6 +41,7 @@ class MailDispatcher:
         self._s_split = s_split
         self._cc_list = cc_list
         self._forbidden_char = forbidden_char
+        self._date_fmts = date_fmts
 
     def proceed_mail(self):
         outlook = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
@@ -70,12 +73,13 @@ class MailDispatcher:
             )
             exit()
 
-        # Sound goood, working on emails received on today
+        # Sound goood, working on emails received in folder
         # https://learn.microsoft.com/en-us/office/vba/outlook/how-to/search-and-filter/filtering-items-using-a-date-time-comparison
         messages = wfolder.Items
-        messages = messages.Restrict(
-            '@SQL=%today("urn:schemas:httpmail:datereceived")%'
-        )
+        # No need to restrict emails by datereceived
+        # messages = messages.Restrict(
+        #     '@SQL=%today("urn:schemas:httpmail:datereceived")%'
+        # )
 
         # messages.Sort("[ReceivedTime]", Descending=True)
         to_move_messages = []
@@ -84,20 +88,34 @@ class MailDispatcher:
             if message.Class != 43:
                 continue
             if re.search(self._pattern, message.Subject) is None:
-                logger.info(f"__SKIP__Not well-formed Mail Subject__{message.Subject}")
+                msg = f"__SKIP__Not well-formed Mail Subject__{message.Subject}"
+                logger.info(msg)
+                print(msg)
                 continue
-            # extract sender from eamil, if not in potentail_senders, skip
+            # extract sender from email
             subject_dict = self.extract_mail_subject(message.Subject)
+
+            # validate pickup date
+            ymd_dt_str = self.ymd_date(subject_dict.get("wdate"))
+            if ymd_dt_str is None:
+                msg = f"__SKIP__Not well-formed Date in Subject__{message.Subject}"
+                logger.info(msg)
+                print(msg)
+                continue
+            # update ymd_date to wdate of subject_dict
+            subject_dict[self._wdate] = ymd_dt_str
+
+            # if not in potentail_senders, skip
             potential_senders = env.get(subject_dict.get(self._trucking_vendor).lower())
             if potential_senders is None:
-                logger.info(
-                    f"__SKIP__Senders not defined__{subject_dict.get(self._trucking_vendor)}__{message.Subject}"
-                )
+                msg = f"__SKIP__Senders not defined__{subject_dict.get(self._trucking_vendor)}__{message.Subject}"
+                logger.info(msg)
+                print(msg)
                 continue
             if self.get_sender_email_string(message) not in potential_senders.lower():
-                logger.info(
-                    f"__SKIP__{self.get_sender_email_string(message)} not in list__[{potential_senders}]__{message.Subject}"
-                )
+                msg = f"__SKIP__{self.get_sender_email_string(message)} not in list__[{potential_senders}]__{message.Subject}"
+                logger.info(msg)
+                print(msg)
                 continue
 
             # proceed to save .xlsx files in attachment of valid mail
@@ -115,6 +133,7 @@ class MailDispatcher:
         # all good, move proceeded email to email_move_to_folder
         for message in to_move_messages:
             message.Move(to_folder)
+            print(f"__PROCEEDED__:{message.Subject}")
 
     def extract_mail_subject(self, subject) -> dict:
         result = {}
@@ -163,3 +182,11 @@ class MailDispatcher:
         mail.HTMLBody = body
         mail.CC = cc_list
         mail.Send()
+
+    def ymd_date(self, dt: str) -> str | None:
+        for fmt in self._date_fmts.split(","):
+            try:
+                return datetime.strftime(datetime.strptime(dt, fmt), "%y%m%d")
+            except:
+                pass
+        return None

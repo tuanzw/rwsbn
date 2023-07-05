@@ -12,6 +12,8 @@ from jinja2 import Environment, FileSystemLoader
 
 from datetime import datetime, timedelta
 
+from util import ymd_date
+
 env = dotenv_values(".env")
 # sharepoint
 username = env.get("email")
@@ -43,17 +45,11 @@ email_folder = env.get("email_folder")
 email_move_to_folder = env.get("email_move_to_folder")
 cc_list = env.get("cc_list")
 valid_sites = env.get("valid_sites")
-date_fmts = env.get("date_fmts")
 
 default_recipient = env.get("default_recipient")
 forbidden_char = env.get("forbidden_char")
 
 sharepoint_folder = env.get("sharepoint_folder")
-
-
-def get_datemonth_str() -> str:
-    p_date = datetime.now() + timedelta(days=1)
-    return p_date.strftime("%m%d")
 
 
 def build_mail_body(bn_dict: dict) -> str:
@@ -101,10 +97,12 @@ def run_app():
             email_folder,
             email_move_to_folder,
             attachment_folder,
+            attachement_move_to_folder,
             s_split,
             cc_list,
             forbidden_char,
-            date_fmts,
+            sp,
+            sharepoint_folder,
         )
         excel_d = ExcelDispatcher(
             s_split,
@@ -126,7 +124,8 @@ def run_app():
             file_name = os.path.basename(file_path)
             subject_dict = mail_d.extract_mail_subject(subject=file_name)
 
-            mmdd_str = subject_dict.get(wdate)[-4:]
+            ymd_dt_str = ymd_date(subject_dict.get("wdate"))
+            mmdd_str = ymd_dt_str[-4:]
             # check and create sharepoint folder if not existed
             add_sp_folder(sp, mmdd_str)
 
@@ -191,22 +190,24 @@ def get_folders(sp: SharePoint, folder):
     return l
 
 
-# save the file to locate or remote location
-def save_file(file_n, file_obj, subfolder):
-    last_in_folder_name = subfolder.split("/")[-1]
-    dir_path = PurePath(
-        attachment_folder,
-        sp_download_folder,
-        f"{get_datemonth_str()}/{last_in_folder_name}",
-    )
-    file_dir_path = PurePath(dir_path, file_n)
+def get_dest_folder_path() -> str:
+    return PurePath(attachment_folder, attachement_move_to_folder)
+
+
+# save the file to local folder
+def save_file(file_n, file_obj, dest_folder_path):
+    file_dir_path = PurePath(dest_folder_path, file_n)
     with open(file_dir_path, "wb") as f:
         f.write(file_obj)
 
 
 def get_file(sp: SharePoint, file_n, folder):
     file_obj = sp.download_file(file_n, folder)
-    save_file(file_n, file_obj, folder)
+    if file_obj is not None:
+        dest_folder = get_dest_folder_path()
+        save_file(file_n, file_obj, dest_folder)
+    else:
+        print("None")
 
 
 def get_files(sp: SharePoint, folder):
@@ -222,9 +223,15 @@ def download_files(sp: SharePoint, sp_folder: str):
             folder_list.append(subfolder)
     for folder in folder_list:
         last_in_folder_name = folder.split("/")[-1]
-        create_dir(f"{get_datemonth_str()}/{last_in_folder_name}")
+        create_dir(last_in_folder_name)
         get_files(sp, folder)
 
 
 if __name__ == "__main__":
     run_app()
+    # sp = SharePoint(username, password, site, site_name, doc_lib)
+    # get_file(
+    #     sp,
+    #     "[RHENUS-TB-Concung-05JUL23-ICD]_PLANNING-TB-05JUL23-ICD.xlsx",
+    #     f"{sharepoint_folder}/0705/ICD",
+    # )

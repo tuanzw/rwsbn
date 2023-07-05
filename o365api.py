@@ -1,6 +1,7 @@
 from office365.sharepoint.client_context import ClientContext
 from office365.runtime.auth.user_credential import UserCredential
 from office365.sharepoint.files.file import File
+from office365.runtime.client_request_exception import ClientRequestException
 
 
 class SharePoint:
@@ -34,8 +35,14 @@ class SharePoint:
     def download_file(self, file_name, folder_name):
         ctx = self._auth()
         file_url = f"/sites/{self._site_name}/{self._doc_lib}/{folder_name}/{file_name}"
-        file = File.open_binary(ctx, file_url)
-        return file.content
+        response = File.open_binary(ctx, file_url)
+
+        if response.status_code == 200:
+            return response.content
+        elif response.status_code == 404:
+            return None
+        else:
+            raise ValueError(response.text)
 
     def upload_file(self, file_name, folder_name, content):
         ctx = self._auth()

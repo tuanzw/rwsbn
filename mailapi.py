@@ -5,7 +5,8 @@ from pathlib import PurePath
 import win32com.client as win32
 
 from logapi import logger
-from datetime import datetime
+from util import ymd_date
+from o365api import SharePoint
 
 env = dotenv_values(".env")
 
@@ -23,10 +24,12 @@ class MailDispatcher:
         email_folder,
         email_move_to_folder,
         attachment_folder,
+        attachement_move_to_folder,
         s_split,
         cc_list,
         forbidden_char,
-        date_fmts,
+        sp: SharePoint,
+        sharepoint_folder,
     ):
         self._company_name = company_name
         self._trucking_vendor = trucking_vendor
@@ -38,10 +41,12 @@ class MailDispatcher:
         self._email_folder = email_folder
         self._email_move_to_folder = email_move_to_folder
         self._attachment_folder = attachment_folder
+        self._attachement_move_to_folder = attachement_move_to_folder
         self._s_split = s_split
         self._cc_list = cc_list
         self._forbidden_char = forbidden_char
-        self._date_fmts = date_fmts
+        self._sp = sp
+        self._sharepoint_folder = sharepoint_folder
 
     def proceed_mail(self):
         outlook = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
@@ -88,7 +93,7 @@ class MailDispatcher:
             if message.Class != 43:
                 continue
             if re.search(self._pattern, message.Subject) is None:
-                msg = f"__SKIP__Not well-formed Mail Subject__{message.Subject}"
+                msg = f"__SKIP__:{message.Subject}__Not well-formed Mail Subject"
                 logger.info(msg)
                 print(msg)
                 continue
@@ -96,24 +101,22 @@ class MailDispatcher:
             subject_dict = self.extract_mail_subject(message.Subject)
 
             # validate pickup date
-            ymd_dt_str = self.ymd_date(subject_dict.get("wdate"))
+            ymd_dt_str = ymd_date(subject_dict.get("wdate"))
             if ymd_dt_str is None:
-                msg = f"__SKIP__Not well-formed Date in Subject__{message.Subject}"
+                msg = f"__SKIP__:{message.Subject}__Not well-formed Date in Subject"
                 logger.info(msg)
                 print(msg)
                 continue
-            # update ymd_date to wdate of subject_dict
-            subject_dict[self._wdate] = ymd_dt_str
 
             # if not in potentail_senders, skip
             potential_senders = env.get(subject_dict.get(self._trucking_vendor).lower())
             if potential_senders is None:
-                msg = f"__SKIP__Senders not defined__{subject_dict.get(self._trucking_vendor)}__{message.Subject}"
+                msg = f"__SKIP__:{message.Subject}__Senders not defined__[{subject_dict.get(self._trucking_vendor)}]"
                 logger.info(msg)
                 print(msg)
                 continue
             if self.get_sender_email_string(message) not in potential_senders.lower():
-                msg = f"__SKIP__{self.get_sender_email_string(message)} not in list__[{potential_senders}]__{message.Subject}"
+                msg = f"__SKIP__:{message.Subject}__{self.get_sender_email_string(message)} not in list__[{subject_dict.get(self._trucking_vendor).lower()}]"
                 logger.info(msg)
                 print(msg)
                 continue
@@ -125,11 +128,17 @@ class MailDispatcher:
                 logger.info(f"__No attachment__{message.Subject}")
             for attachment in attachments:
                 if attachment.FileName.split(".")[-1] == "xlsx":
+                    save_file_n = (
+                        f"[{self.build_key(subject_dict)}]_{attachment.FileName}"
+                    )
                     file_path = PurePath(
                         self._attachment_folder,
-                        f"[{self.build_key(subject_dict)}]_{attachment.FileName}",
+                        save_file_n,
                     )
                     attachment.SaveAsFile(file_path)
+
+                    folder_n = f"{self._sharepoint_folder}/{ymd_dt_str[-4:]}/{subject_dict.get(self._site_id)}"
+                    self.get_file(save_file_n, folder_n)
         # all good, move proceeded email to email_move_to_folder
         for message in to_move_messages:
             message.Move(to_folder)
@@ -183,10 +192,18 @@ class MailDispatcher:
         mail.CC = cc_list
         mail.Send()
 
-    def ymd_date(self, dt: str) -> str | None:
-        for fmt in self._date_fmts.split(","):
-            try:
-                return datetime.strftime(datetime.strptime(dt, fmt), "%y%m%d")
-            except:
-                pass
-        return None
+    def get_dest_folder_path(self) -> str:
+        return PurePath(self._attachment_folder, self._attachement_move_to_folder)
+
+    # save the file to local folder
+    def save_file(self, file_n, file_obj, dest_folder_path):
+        file_dir_path = PurePath(dest_folder_path, file_n)
+        with open(file_dir_path, "wb") as f:
+            f.write(file_obj)
+
+    def get_file(self, file_n, folder):
+        file_obj = self._sp.download_file(file_n, folder)
+        if file_obj is not None:
+            dest_folder = self.get_dest_folder_path()
+            self.save_file(file_n, file_obj, dest_folder)
+            logger.info(f"__DOWNLOADED__:{folder}/{file_n}")

@@ -30,6 +30,7 @@ class MailDispatcher:
         forbidden_char,
         sp: SharePoint,
         sharepoint_folder,
+        valid_sites,
     ):
         self._company_name = company_name
         self._trucking_vendor = trucking_vendor
@@ -47,6 +48,7 @@ class MailDispatcher:
         self._forbidden_char = forbidden_char
         self._sp = sp
         self._sharepoint_folder = sharepoint_folder
+        self._valid_sites = valid_sites
 
     def proceed_mail(self):
         outlook = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
@@ -117,6 +119,12 @@ class MailDispatcher:
                 continue
             if self.get_sender_email_string(message) not in potential_senders.lower():
                 msg = f"__SKIP__:{message.Subject}__{self.get_sender_email_string(message)} not in list__[{subject_dict.get(self._trucking_vendor).lower()}]"
+                logger.info(msg)
+                print(msg)
+                continue
+
+            if subject_dict.get(self._site_id) not in self._valid_sites:
+                msg = f"__SKIP__:{message.Subject}__{subject_dict.get(self._site_id)} not a valid site"
                 logger.info(msg)
                 print(msg)
                 continue

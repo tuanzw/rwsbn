@@ -103,6 +103,7 @@ def run_app():
             forbidden_char,
             sp,
             sharepoint_folder,
+            valid_sites
         )
         excel_d = ExcelDispatcher(
             s_split,

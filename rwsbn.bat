@@ -1,7 +1,7 @@
 @ECHO OFF
 ::Run in case of virtual environment
-CALL C:\Projects\rwsbn\Scripts\activate
+CALL %userprofile%\rwsbn\Scripts\activate
 ::Correct absolute path to code file
-python C:\Projects\rwsbn\main.py
+python %userprofile%\rwsbn\main.py
 
 PAUSE
